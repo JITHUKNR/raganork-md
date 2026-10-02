@@ -105,6 +105,56 @@ Module(
   }
 );
 
+// High Quality Custom Sticker Converter function
+const toHDSticker = (inputPath, isVideo = false) => {
+  return new Promise((resolve, reject) => {
+    const tempDir = "/tmp/raganork";
+    if (!fs.existsSync(tempDir)) {
+      try {
+        fs.mkdirSync(tempDir, { recursive: true });
+      } catch (e) {}
+    }
+    const outputPath = getTempPath(`hd_stk_${Date.now()}.webp`);
+    let command = ffmpeg(inputPath).outputOptions(["-y"]);
+
+    if (isVideo) {
+      command
+        .videoFilters([
+          "scale=512:512:flags=lanczos:force_original_aspect_ratio=decrease",
+          "pad=512:512:(ow-iw)/2:(oh-ih)/2:color=#00000000",
+          "fps=15"
+        ])
+        .outputOptions([
+          "-vcodec", "libwebp",
+          "-lossless", "0",
+          "-compression_level", "6",
+          "-q:v", "90",
+          "-loop", "0",
+          "-preset", "picture",
+          "-an",
+          "-vsync", "0"
+        ]);
+    } else {
+      command
+        .videoFilters([
+          "scale=512:512:flags=lanczos:force_original_aspect_ratio=decrease",
+          "pad=512:512:(ow-iw)/2:(oh-ih)/2:color=#00000000"
+        ])
+        .outputOptions([
+          "-vcodec", "libwebp",
+          "-lossless", "1",
+          "-qscale", "100",
+          "-preset", "drawing"
+        ]);
+    }
+
+    command
+      .save(outputPath)
+      .on("end", () => resolve(outputPath))
+      .on("error", (err) => reject(err));
+  });
+};
+
 Module(
   {
     pattern: "sticker ?(.*)",
@@ -112,20 +162,16 @@ Module(
     desc: Lang.STICKER_DESC,
   },
   async (message, match) => {
-    // 1. ഡിഫോൾട്ട് വിവരങ്ങൾ സെറ്റ് ചെയ്യുന്നു
     let pack = (STICKER_DATA && STICKER_DATA.includes(";")) ? STICKER_DATA.split(";")[0] : message.senderName;
     let author = (STICKER_DATA && STICKER_DATA.includes(";")) ? STICKER_DATA.split(";")[1] : "";
 
-    // 2. കമാൻഡിൽ പേര് നൽകിയിട്ടുണ്ടെങ്കിൽ അത് എടുക്കുന്നു
     if (match[1] && match[1].trim() !== "") {
       let customText = match[1].trim();
       if (customText.includes(";")) {
-        // രണ്ട് പേര് നൽകിയാൽ: ആദ്യത്തേത് Pack Name, രണ്ടാമത്തേത് Author Name
         let parts = customText.split(";");
         pack = parts[0].trim();
         author = parts[1].trim();
       } else {
-        // ഒറ്റ പേര് മാത്രം നൽകിയാൽ: ആ പേര് മാത്രം വരുന്നു, രണ്ടാമത്തെ പേര് പൂർണ്ണമായും ഒഴിവാക്കുന്നു
         pack = customText;
         author = "";
       }
@@ -139,7 +185,6 @@ Module(
       ios: "https://github.com/souravkl11/Raganork-md/",
     };
 
-    // Check whether the command is sent as a caption to media or as a reply
     const hasDirectMedia = !!(
       message.image ||
       message.video ||
@@ -159,33 +204,28 @@ Module(
       return await message.send(Lang.STICKER_NEED_REPLY);
     }
 
-    // Handle album media
     if (targetMedia.album) {
       const albumData = await targetMedia.download();
       const allFiles = [...(albumData.images || []), ...(albumData.videos || [])];
       if (allFiles.length === 0) return await message.send("_No media in album_");
 
-      await message.send(`_Converting ${allFiles.length} stickers..._`);
+      await message.send(`_Converting ${allFiles.length} HD stickers..._`);
       for (const file of allFiles) {
         try {
           const isVideo = albumData.videos?.includes(file);
-          const stickerFile = fs.readFileSync(
-            await addExif(
-              await sticker(file, isVideo ? "video" : "image"),
-              exif
-            )
-          );
+          const converted = await toHDSticker(file, isVideo);
+          const stickerFile = fs.readFileSync(await addExif(converted, exif));
           await message.sendMessage(stickerFile, "sticker", {
             quoted: message.quoted || message.data,
           });
+          if (fs.existsSync(converted)) fs.unlinkSync(converted);
         } catch (err) {
-          console.error("Failed to convert album sticker:", err);
+          console.error("Album conversion error:", err);
         }
       }
       return;
     }
 
-    // Ensure temp directory exists
     const tempDir = "/tmp/raganork";
     if (!fs.existsSync(tempDir)) {
       try {
@@ -193,21 +233,18 @@ Module(
       } catch (e) {}
     }
 
-    // Check if the media is video or gif
     let isVideo = !!(
       targetMedia.video ||
       (targetMedia.mimetype && targetMedia.mimetype.includes("video")) ||
       (targetMedia.data && targetMedia.data.message && targetMedia.data.message.videoMessage)
     );
 
-    // Download target media
     var savedFile = await targetMedia.download();
     if (!savedFile) return await message.send("_Failed to download media!_");
 
     let fileToConvert = savedFile;
     let trimmedFile = null;
 
-    // If video, automatically trim first 6 seconds for smooth sticker generation
     if (isVideo) {
       try {
         trimmedFile = getTempPath(`trim_${Date.now()}.mp4`);
@@ -222,8 +259,7 @@ Module(
             ])
             .save(trimmedFile)
             .on("end", resolve)
-            .on("error", (err) => {
-              // Fallback if stream copy fails
+            .on("error", () => {
               ffmpeg(savedFile)
                 .setStartTime(0)
                 .setDuration(6)
@@ -240,33 +276,38 @@ Module(
       }
     }
 
-    // Convert to sticker format
-    let converted = await sticker(fileToConvert, isVideo ? "video" : "image");
-    if (!converted || !fs.existsSync(converted)) {
-      if (fs.existsSync(savedFile)) fs.unlinkSync(savedFile);
-      if (trimmedFile && fs.existsSync(trimmedFile)) fs.unlinkSync(trimmedFile);
-      return await message.send("_Failed to process sticker!_");
+    let converted = null;
+    let exifFile = null;
+
+    try {
+      converted = await toHDSticker(fileToConvert, isVideo);
+      exifFile = await addExif(converted, exif);
+
+      await message.sendMessage(
+        fs.readFileSync(exifFile),
+        "sticker",
+        { quoted: message.quoted || message.data }
+      );
+    } catch (err) {
+      console.error("HD Sticker generation failed:", err);
+      try {
+        converted = await sticker(fileToConvert, isVideo ? "video" : "image");
+        exifFile = await addExif(converted, exif);
+        await message.sendMessage(
+          fs.readFileSync(exifFile),
+          "sticker",
+          { quoted: message.quoted || message.data }
+        );
+      } catch (fbErr) {
+        return await message.send("_Failed to generate sticker!_");
+      }
     }
 
-    let exifFile = await addExif(converted, exif);
-    if (!exifFile || !fs.existsSync(exifFile)) {
-      if (fs.existsSync(savedFile)) fs.unlinkSync(savedFile);
-      if (fs.existsSync(converted)) fs.unlinkSync(converted);
-      return await message.send("_Failed to apply metadata!_");
-    }
-
-    await message.sendMessage(
-      fs.readFileSync(exifFile),
-      "sticker",
-      { quoted: message.quoted || message.data }
-    );
-
-    // Clean up temporary files safely
     try {
       if (fs.existsSync(savedFile)) fs.unlinkSync(savedFile);
       if (trimmedFile && fs.existsSync(trimmedFile)) fs.unlinkSync(trimmedFile);
-      if (fs.existsSync(converted)) fs.unlinkSync(converted);
-      if (fs.existsSync(exifFile)) fs.unlinkSync(exifFile);
+      if (converted && fs.existsSync(converted)) fs.unlinkSync(converted);
+      if (exifFile && fs.existsSync(exifFile)) fs.unlinkSync(exifFile);
     } catch (e) {}
   }
 );
