@@ -112,19 +112,22 @@ Module(
     desc: Lang.STICKER_DESC,
   },
   async (message, match) => {
-    // 1. ഡിഫോൾട്ട് പാക്ക് നെയിമും ഓതർ നെയിമും എടുക്കുന്നു
+    // 1. ഡിഫോൾട്ട് വിവരങ്ങൾ സെറ്റ് ചെയ്യുന്നു
     let pack = (STICKER_DATA && STICKER_DATA.includes(";")) ? STICKER_DATA.split(";")[0] : message.senderName;
     let author = (STICKER_DATA && STICKER_DATA.includes(";")) ? STICKER_DATA.split(";")[1] : "";
 
-    // 2. കമാൻഡിൽ പുതിയ പേര് നൽകിയിട്ടുണ്ടെങ്കിൽ അത് മാറ്റുന്നു (.sticker PACK;AUTHOR)
+    // 2. കമാൻഡിൽ പേര് നൽകിയിട്ടുണ്ടെങ്കിൽ അത് എടുക്കുന്നു
     if (match[1] && match[1].trim() !== "") {
       let customText = match[1].trim();
       if (customText.includes(";")) {
+        // രണ്ട് പേര് നൽകിയാൽ: ആദ്യത്തേത് Pack Name, രണ്ടാമത്തേത് Author Name
         let parts = customText.split(";");
         pack = parts[0].trim();
         author = parts[1].trim();
       } else {
+        // ഒറ്റ പേര് മാത്രം നൽകിയാൽ: ആ പേര് മാത്രം വരുന്നു, രണ്ടാമത്തെ പേര് പൂർണ്ണമായും ഒഴിവാക്കുന്നു
         pack = customText;
+        author = "";
       }
     }
 
@@ -136,7 +139,7 @@ Module(
       ios: "https://github.com/souravkl11/Raganork-md/",
     };
 
-    // 3. ഫോട്ടോയോ വീഡിയോയോ അല്ലാതെ വെറും ടെക്സ്റ്റ് മാത്രമാണ് നൽകിയതെങ്കിൽ attp റൺ ചെയ്യുന്നു
+    // 3. മീഡിയയിലേക്ക് റിപ്ലൈ ചെയ്യാതെ വെറും ടെക്സ്റ്റ് മാത്രമാണെങ്കിൽ attp റൺ ചെയ്യുന്നു
     if (message.reply_message === false) {
       if (match[1] && match[1].trim() !== "") {
         var result = await attp(match[1].trim());
@@ -174,7 +177,7 @@ Module(
       return;
     }
 
-    // 5. സാധാരണ ഇമേജ് / വീഡിയോ ഡൗൺലോഡ് ചെയ്ത് നൽകിയ പേരിൽ സ്റ്റിക്കർ ആക്കുന്നു
+    // 5. സാധാരണ ഇമേജ് / വീഡിയോ ഡൗൺലോഡ് ചെയ്ത് നിങ്ങൾ നൽകിയ പേരിൽ സ്റ്റിക്കർ ആക്കുന്നു
     var savedFile = await message.reply_message.download();
     if (!savedFile) return await message.send("_Failed to download media!_");
 
@@ -188,6 +191,7 @@ Module(
       { quoted: message.quoted }
     );
 
+    // താൽക്കാലിക ഫയലുകൾ ക്ലീൻ ചെയ്യുന്നു
     try {
       if (fs.existsSync(savedFile)) fs.unlinkSync(savedFile);
       if (fs.existsSync(converted)) fs.unlinkSync(converted);
