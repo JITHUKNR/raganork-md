@@ -1,9 +1,8 @@
 const { Module } = require('../main');
-const Config = require('../config');
 const fs = require('fs');
 const path = require('path');
 
-// converters.js-ൽ ഉപയോഗിക്കുന്ന അതേ ഒറിജിനൽ ഹെൽപ്പറുകൾ
+// ഒറിജിനൽ Raganork സ്റ്റിക്കർ മൊഡ്യൂളുകൾ
 let afx;
 try {
     afx = require('./_afx');
@@ -15,6 +14,10 @@ try {
     }
 }
 const { sticker, addExif } = afx;
+
+// ഇവിടെ നിങ്ങളുടെ ഇഷ്ടാനുസൃത പേരുകൾ നൽകിയിരിക്കുന്നു
+const PACK_NAME = 'WETFLAX';
+const AUTHOR_NAME = 'ABHIIXZ🥵🤍';
 
 const STATUS_FILE = path.join(__dirname, '../autostick_status.json');
 
@@ -34,11 +37,11 @@ function setStatus(bool) {
     } catch (e) {}
 }
 
-// കമാൻഡ്: .autostick on / off
+// ഓൺ / ഓഫ് കമാൻഡ്
 Module({
     pattern: 'autostick ?(.*)',
     fromMe: true,
-    desc: 'Toggle Auto Sticker for images, videos, and GIFs'
+    desc: 'Toggle Auto Sticker'
 }, async (message, match) => {
     let opt = match[1] ? match[1].toLowerCase().trim() : '';
 
@@ -68,38 +71,28 @@ Module({
     }
 });
 
-// ഓട്ടോ കൺവേർഷൻ ഫംഗ്ഷൻ (converters.js-ന്റെ അതേ ഒറിജിനൽ ലോജിക്)
+// ഓട്ടോ കൺവേർഷൻ
 async function handleAutoStick(message) {
     if (!getStatus()) return;
 
     try {
-        let DEFAULT_PACK = 'WETFLAX';
-        let DEFAULT_AUTHOR = 'ABHIIXZ';
-        let set = (Config.STICKER_DATA && Config.STICKER_DATA.includes(';')) 
-            ? Config.STICKER_DATA.split(';') 
-            : [DEFAULT_PACK, DEFAULT_AUTHOR];
-
         let exif = {
             categories: ['👑'],
             android: 'https://github.com/souravkl11/raganork-md',
             ios: 'https://github.com/souravkl11/raganork-md',
-            packname: set[0] || DEFAULT_PACK,
-            author: set[1] || DEFAULT_AUTHOR
+            packname: PACK_NAME,
+            author: AUTHOR_NAME
         };
 
-        // മീഡിയ ഡൗൺലോഡ് ചെയ്യുന്നു
         let savedFile = await message.download();
         if (!savedFile) return;
 
-        // Raganork-ന്റെ സ്റ്റിക്കർ എൻജിൻ
         let isVideo = message.video === true;
         let convertedSticker = await sticker(savedFile, isVideo ? 'video' : 'image');
         let exifAdded = await addExif(convertedSticker, exif);
 
-        // തിരികെ സ്റ്റിക്കർ അയക്കുന്നു
         await message.sendMessage(fs.readFileSync(exifAdded), {}, 'sticker');
 
-        // താൽക്കാലിക ഫയലുകൾ നീക്കം ചെയ്യുന്നു
         try {
             if (fs.existsSync(savedFile)) fs.unlinkSync(savedFile);
             if (fs.existsSync(convertedSticker)) fs.unlinkSync(convertedSticker);
@@ -107,11 +100,11 @@ async function handleAutoStick(message) {
         } catch (e) {}
 
     } catch (err) {
-        console.log("Auto-Sticker conversion error:", err);
+        console.log("Auto-Sticker error:", err);
     }
 }
 
-// ഇമേജ്, വീഡിയോ, ജിഫ് ലിസണറുകൾ
+// മീഡിയ ലിസണറുകൾ
 Module({ on: 'image', fromMe: false }, handleAutoStick);
 Module({ on: 'image', fromMe: true }, handleAutoStick);
 Module({ on: 'video', fromMe: false }, handleAutoStick);
