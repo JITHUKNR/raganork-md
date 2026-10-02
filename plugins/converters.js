@@ -185,13 +185,31 @@ Module(
       return;
     }
 
-    // Process single image, video, or GIF
+    // Ensure temp directory exists
+    const tempDir = "/tmp/raganork";
+    if (!fs.existsSync(tempDir)) {
+      try {
+        fs.mkdirSync(tempDir, { recursive: true });
+      } catch (e) {}
+    }
+
+    // Process single image, video, or GIF safely
     var savedFile = await targetMedia.download();
     if (!savedFile) return await message.send("_Failed to download media!_");
 
     let isVideo = targetMedia.video === true;
     let converted = await sticker(savedFile, isVideo ? "video" : "image");
+    if (!converted || !fs.existsSync(converted)) {
+      if (fs.existsSync(savedFile)) fs.unlinkSync(savedFile);
+      return await message.send("_Failed to process sticker!_");
+    }
+
     let exifFile = await addExif(converted, exif);
+    if (!exifFile || !fs.existsSync(exifFile)) {
+      if (fs.existsSync(savedFile)) fs.unlinkSync(savedFile);
+      if (fs.existsSync(converted)) fs.unlinkSync(converted);
+      return await message.send("_Failed to apply metadata!_");
+    }
 
     await message.sendMessage(
       fs.readFileSync(exifFile),
@@ -199,7 +217,7 @@ Module(
       { quoted: message.quoted || message.data }
     );
 
-    // Clean up temporary files
+    // Clean up temporary files safely
     try {
       if (fs.existsSync(savedFile)) fs.unlinkSync(savedFile);
       if (fs.existsSync(converted)) fs.unlinkSync(converted);
