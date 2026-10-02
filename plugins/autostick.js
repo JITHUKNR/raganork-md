@@ -1,9 +1,7 @@
 const { Module } = require('../main');
 const Config = require('../config');
-const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 const fs = require('fs');
 const path = require('path');
-const ffmpeg = require('fluent-ffmpeg');
 
 const STATUS_FILE = path.join(__dirname, '../autostick_status.json');
 
@@ -23,7 +21,6 @@ function setStatus(bool) {
     } catch (e) {}
 }
 
-// 1. ഓൺ/ഓഫ് ചെയ്യാനുള്ള കമാൻഡ്
 Module({
     pattern: 'autostick ?(.*)',
     fromMe: true,
@@ -33,19 +30,30 @@ Module({
 
     if (opt === 'on') {
         setStatus(true);
-        return await message.client.sendMessage(message.jid, { text: '_Auto Sticker has been ENABLED! (Images, Videos & GIFs will convert automatically)_' }, { quoted: message.data });
+        return await message.client.sendMessage(
+            message.jid, 
+            { text: '_Auto Sticker has been ENABLED! (Images, Videos & GIFs will convert automatically)_' }, 
+            { quoted: message.data }
+        );
     } else if (opt === 'off') {
         setStatus(false);
-        return await message.client.sendMessage(message.jid, { text: '_Auto Sticker has been DISABLED!_' }, { quoted: message.data });
+        return await message.client.sendMessage(
+            message.jid, 
+            { text: '_Auto Sticker has been DISABLED!_' }, 
+            { quoted: message.data }
+        );
     } else {
         let current = getStatus() ? 'ENABLED ✅' : 'DISABLED ❌';
-        return await message.client.sendMessage(message.jid, { 
-            text: `*Auto Sticker Menu*\n\nCurrent Status: *${current}*\n\n• *.autostick on* - To enable\n• *.autostick off* - To disable` 
-        }, { quoted: message.data });
+        return await message.client.sendMessage(
+            message.jid, 
+            { 
+                text: `*Auto Sticker Menu*\n\nCurrent Status: *${current}*\n\n• *.autostick on* - To enable\n• *.autostick off* - To disable` 
+            }, 
+            { quoted: message.data }
+        );
     }
 });
 
-// 2. ഇമേജ്, വീഡിയോ, ജിഫ് കൺവേർഷൻ ലോജിക്
 async function convertAndSend(message) {
     if (!getStatus()) return;
 
@@ -56,73 +64,24 @@ async function convertAndSend(message) {
             ? Config.STICKER_DATA.split(';') 
             : [DEFAULT_PACK, DEFAULT_AUTHOR];
 
-        let msg = message.data.message;
-        let type = Object.keys(msg)[0];
-        if (type === 'ephemeralMessage') {
-            msg = msg.ephemeralMessage.message;
-            type = Object.keys(msg)[0];
-        }
+        let mediaPath = await message.client.downloadAndSaveMediaMessage(message.data);
+        if (!mediaPath) return;
 
-        let mediaMsg = msg.imageMessage || msg.videoMessage;
-        if (!mediaMsg) return;
-
-        let isVideo = !!msg.videoMessage;
-        let mediaType = isVideo ? 'video' : 'image';
-        let stream = await downloadContentFromMessage(mediaMsg, mediaType);
-        
-        let buffer = Buffer.from([]);
-        for await (const chunk of stream) {
-            buffer = Buffer.concat([buffer, chunk]);
-        }
-
-        let tempInput = path.join('/tmp', `input_${Date.now()}.${isVideo ? 'mp4' : 'jpg'}`);
-        let tempOutput = path.join('/tmp', `sticker_${Date.now()}.webp`);
-        fs.writeFileSync(tempInput, buffer);
-
-        let command = ffmpeg(tempInput)
-            .outputOptions([
-                '-vcodec', 'libwebp',
-                '-vf', 'scale=512:512:flags=lanczos:force_original_aspect_ratio=decrease,format=rgba,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=#00000000'
-            ]);
-
-        if (isVideo) {
-            command.outputOptions([
-                '-loop', '0',
-                '-ss', '00:00:00',
-                '-t', '00:00:05',
-                '-preset', 'default',
-                '-an',
-                '-vsync', '0',
-                '-s', '512:512'
-            ]);
-        }
-
-        command.save(tempOutput).on('end', async () => {
-            try {
-                let stickerBuffer = fs.readFileSync(tempOutput);
-                await message.client.sendMessage(
-                    message.jid,
-                    { sticker: stickerBuffer },
-                    { 
-                        quoted: message.data,
-                        packname: set[0] || DEFAULT_PACK,
-                        author: set[1] || DEFAULT_AUTHOR
-                    }
-                );
-            } catch (sendErr) {
-                console.log("Send sticker error:", sendErr);
-            } finally {
-                if (fs.existsSync(tempInput)) fs.unlinkSync(tempInput);
-                if (fs.existsSync(tempOutput)) fs.unlinkSync(tempOutput);
+        await message.client.sendMessage(
+            message.jid,
+            { sticker: fs.readFileSync(mediaPath) },
+            { 
+                quoted: message.data,
+                packname: set[0] || DEFAULT_PACK,
+                author: set[1] || DEFAULT_AUTHOR
             }
-        }).on('error', (ffmpegErr) => {
-            console.log("FFmpeg conversion error:", ffmpegErr);
-            if (fs.existsSync(tempInput)) fs.unlinkSync(tempInput);
-            if (fs.existsSync(tempOutput)) fs.unlinkSync(tempOutput);
-        });
+        );
 
+        if (fs.existsSync(mediaPath)) {
+            fs.unlinkSync(mediaPath);
+        }
     } catch (err) {
-        console.log("Auto-Sticker execution error:", err);
+        console.log("Auto-Sticker error:", err);
     }
 }
 
