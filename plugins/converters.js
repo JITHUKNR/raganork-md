@@ -139,10 +139,15 @@ Module(
       ios: "https://github.com/souravkl11/Raganork-md/",
     };
 
-    // Check whether media is sent directly with caption or as a replied message
-    const targetMedia = (message.image || message.video) ? message : (message.reply_message ? message.reply_message : null);
+    // Check whether the command is sent as a caption to media or as a reply
+    const hasDirectMedia = !!(
+      message.image ||
+      message.video ||
+      (message.data && message.data.message && (message.data.message.imageMessage || message.data.message.videoMessage))
+    );
 
-    // If no media is found
+    const targetMedia = hasDirectMedia ? message : (message.reply_message ? message.reply_message : null);
+
     if (!targetMedia) {
       if (match[1] && match[1].trim() !== "") {
         var result = await attp(match[1].trim());
