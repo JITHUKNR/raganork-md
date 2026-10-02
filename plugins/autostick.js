@@ -1,23 +1,7 @@
 const { Module } = require('../main');
 const fs = require('fs');
 const path = require('path');
-
-// ഒറിജിനൽ Raganork സ്റ്റിക്കർ മൊഡ്യൂളുകൾ
-let afx;
-try {
-    afx = require('./_afx');
-} catch (e) {
-    try {
-        afx = require('./_battle');
-    } catch (err) {
-        afx = require('../core/_afx');
-    }
-}
-const { sticker, addExif } = afx;
-
-// ഇവിടെ നിങ്ങളുടെ ഇഷ്ടാനുസൃത പേരുകൾ നൽകിയിരിക്കുന്നു
-const PACK_NAME = 'WETFLAX';
-const AUTHOR_NAME = 'ABHIIXZ🥵🤍';
+const { sticker, addExif } = require('./_afx');
 
 const STATUS_FILE = path.join(__dirname, '../autostick_status.json');
 
@@ -37,7 +21,6 @@ function setStatus(bool) {
     } catch (e) {}
 }
 
-// ഓൺ / ഓഫ് കമാൻഡ്
 Module({
     pattern: 'autostick ?(.*)',
     fromMe: true,
@@ -47,65 +30,47 @@ Module({
 
     if (opt === 'on') {
         setStatus(true);
-        return await message.client.sendMessage(
-            message.jid, 
-            { text: '_Auto Sticker has been ENABLED! (Images, Videos & GIFs will convert automatically)_' }, 
-            { quoted: message.data }
-        );
+        return await message.sendReply('_Auto Sticker has been ENABLED!_');
     } else if (opt === 'off') {
         setStatus(false);
-        return await message.client.sendMessage(
-            message.jid, 
-            { text: '_Auto Sticker has been DISABLED!_' }, 
-            { quoted: message.data }
-        );
+        return await message.sendReply('_Auto Sticker has been DISABLED!_');
     } else {
         let current = getStatus() ? 'ENABLED ✅' : 'DISABLED ❌';
-        return await message.client.sendMessage(
-            message.jid, 
-            { 
-                text: `*Auto Sticker Menu*\n\nCurrent Status: *${current}*\n\n• *.autostick on* - To enable\n• *.autostick off* - To disable` 
-            }, 
-            { quoted: message.data }
-        );
+        return await message.sendReply(`*Auto Sticker Status:* ${current}\n\n• *.autostick on*\n• *.autostick off*`);
     }
 });
 
-// ഓട്ടോ കൺവേർഷൻ
-async function handleAutoStick(message) {
+Module({
+    on: 'text',
+    fromMe: false
+}, async (message) => {
     if (!getStatus()) return;
+    
+    // ഫോട്ടോയോ വീഡിയോയോ ആണോ എന്ന് നോക്കുന്നു
+    let isMedia = message.image || message.video;
+    if (!isMedia) return;
 
     try {
         let exif = {
             categories: ['👑'],
             android: 'https://github.com/souravkl11/raganork-md',
             ios: 'https://github.com/souravkl11/raganork-md',
-            packname: PACK_NAME,
-            author: AUTHOR_NAME
+            packname: 'WETFLAX',
+            author: 'ABHIIXZ🥵🤍'
         };
 
-        let savedFile = await message.download();
-        if (!savedFile) return;
+        let mediaFile = await message.download();
+        if (!mediaFile) return;
 
-        let isVideo = message.video === true;
-        let convertedSticker = await sticker(savedFile, isVideo ? 'video' : 'image');
-        let exifAdded = await addExif(convertedSticker, exif);
+        let stick = await sticker(mediaFile, message.video ? 'video' : 'image');
+        let finalSticker = await addExif(stick, exif);
 
-        await message.sendMessage(fs.readFileSync(exifAdded), {}, 'sticker');
+        await message.sendMessage(fs.readFileSync(finalSticker), {}, 'sticker');
 
-        try {
-            if (fs.existsSync(savedFile)) fs.unlinkSync(savedFile);
-            if (fs.existsSync(convertedSticker)) fs.unlinkSync(convertedSticker);
-            if (fs.existsSync(exifAdded)) fs.unlinkSync(exifAdded);
-        } catch (e) {}
-
+        if (fs.existsSync(mediaFile)) fs.unlinkSync(mediaFile);
+        if (fs.existsSync(stick)) fs.unlinkSync(stick);
+        if (fs.existsSync(finalSticker)) fs.unlinkSync(finalSticker);
     } catch (err) {
-        console.log("Auto-Sticker error:", err);
+        console.log("Auto-sticker error:", err);
     }
-}
-
-// മീഡിയ ലിസണറുകൾ
-Module({ on: 'image', fromMe: false }, handleAutoStick);
-Module({ on: 'image', fromMe: true }, handleAutoStick);
-Module({ on: 'video', fromMe: false }, handleAutoStick);
-Module({ on: 'video', fromMe: true }, handleAutoStick);
+});
