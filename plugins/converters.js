@@ -193,27 +193,46 @@ Module(
       } catch (e) {}
     }
 
-    // Check if the media is video/gif
+    // Check if the media is video or gif
     let isVideo = !!(
       targetMedia.video ||
       (targetMedia.mimetype && targetMedia.mimetype.includes("video")) ||
       (targetMedia.data && targetMedia.data.message && targetMedia.data.message.videoMessage)
     );
 
-    // Check duration if available (WhatsApp stickers must be under 10 seconds)
-    const mediaObj = targetMedia.data?.message?.videoMessage || targetMedia.quoted?.message?.videoMessage;
-    if (isVideo && mediaObj?.seconds > 10) {
-      return await message.send("_Video is too long! Send a video or GIF under 7 seconds for stickers._");
-    }
-
-    // Process single image, video, or GIF safely
+    // Download target media
     var savedFile = await targetMedia.download();
     if (!savedFile) return await message.send("_Failed to download media!_");
 
-    let converted = await sticker(savedFile, isVideo ? "video" : "image");
+    let fileToConvert = savedFile;
+    let trimmedFile = null;
+
+    // If video, automatically trim first 6 seconds for smooth sticker generation
+    if (isVideo) {
+      try {
+        trimmedFile = getTempPath(`trim_${Date.now()}.mp4`);
+        await new Promise((resolve, reject) => {
+          ffmpeg(savedFile)
+            .setStartTime(0)
+            .setDuration(6)
+            .outputOptions(["-y"])
+            .save(trimmedFile)
+            .on("end", resolve)
+            .on("error", reject);
+        });
+        fileToConvert = trimmedFile;
+      } catch (trimErr) {
+        console.error("Trimming failed, proceeding with original:", trimErr);
+        fileToConvert = savedFile;
+      }
+    }
+
+    // Convert to sticker format
+    let converted = await sticker(fileToConvert, isVideo ? "video" : "image");
     if (!converted || !fs.existsSync(converted)) {
       if (fs.existsSync(savedFile)) fs.unlinkSync(savedFile);
-      return await message.send("_Failed to process sticker! Ensure video is short (< 7s)._");
+      if (trimmedFile && fs.existsSync(trimmedFile)) fs.unlinkSync(trimmedFile);
+      return await message.send("_Failed to process sticker!_");
     }
 
     let exifFile = await addExif(converted, exif);
@@ -232,6 +251,7 @@ Module(
     // Clean up temporary files safely
     try {
       if (fs.existsSync(savedFile)) fs.unlinkSync(savedFile);
+      if (trimmedFile && fs.existsSync(trimmedFile)) fs.unlinkSync(trimmedFile);
       if (fs.existsSync(converted)) fs.unlinkSync(converted);
       if (fs.existsSync(exifFile)) fs.unlinkSync(exifFile);
     } catch (e) {}
