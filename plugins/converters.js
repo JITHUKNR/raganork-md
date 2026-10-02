@@ -139,8 +139,11 @@ Module(
       ios: "https://github.com/souravkl11/Raganork-md/",
     };
 
-    // 3. മീഡിയയിലേക്ക് റിപ്ലൈ ചെയ്യാതെ വെറും ടെക്സ്റ്റ് മാത്രമാണെങ്കിൽ attp റൺ ചെയ്യുന്നു
-    if (message.reply_message === false) {
+    // Check whether media is sent directly with caption or as a replied message
+    const targetMedia = (message.image || message.video) ? message : (message.reply_message ? message.reply_message : null);
+
+    // If no media is found
+    if (!targetMedia) {
       if (match[1] && match[1].trim() !== "") {
         var result = await attp(match[1].trim());
         return await message.sendMessage(
@@ -151,9 +154,9 @@ Module(
       return await message.send(Lang.STICKER_NEED_REPLY);
     }
 
-    // 4. ആൽബം ഫയലുകൾ കൈകാര്യം ചെയ്യുന്നു
-    if (message.reply_message.album) {
-      const albumData = await message.reply_message.download();
+    // Handle album media
+    if (targetMedia.album) {
+      const albumData = await targetMedia.download();
       const allFiles = [...(albumData.images || []), ...(albumData.videos || [])];
       if (allFiles.length === 0) return await message.send("_No media in album_");
 
@@ -168,7 +171,7 @@ Module(
             )
           );
           await message.sendMessage(stickerFile, "sticker", {
-            quoted: message.quoted,
+            quoted: message.quoted || message.data,
           });
         } catch (err) {
           console.error("Failed to convert album sticker:", err);
@@ -177,21 +180,21 @@ Module(
       return;
     }
 
-    // 5. സാധാരണ ഇമേജ് / വീഡിയോ ഡൗൺലോഡ് ചെയ്ത് നിങ്ങൾ നൽകിയ പേരിൽ സ്റ്റിക്കർ ആക്കുന്നു
-    var savedFile = await message.reply_message.download();
+    // Process single image, video, or GIF
+    var savedFile = await targetMedia.download();
     if (!savedFile) return await message.send("_Failed to download media!_");
 
-    let isVideo = message.reply_message.video === true;
+    let isVideo = targetMedia.video === true;
     let converted = await sticker(savedFile, isVideo ? "video" : "image");
     let exifFile = await addExif(converted, exif);
 
     await message.sendMessage(
       fs.readFileSync(exifFile),
       "sticker",
-      { quoted: message.quoted }
+      { quoted: message.quoted || message.data }
     );
 
-    // താൽക്കാലിക ഫയലുകൾ ക്ലീൻ ചെയ്യുന്നു
+    // Clean up temporary files
     try {
       if (fs.existsSync(savedFile)) fs.unlinkSync(savedFile);
       if (fs.existsSync(converted)) fs.unlinkSync(converted);
