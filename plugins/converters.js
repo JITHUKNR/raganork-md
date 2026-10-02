@@ -193,15 +193,27 @@ Module(
       } catch (e) {}
     }
 
+    // Check if the media is video/gif
+    let isVideo = !!(
+      targetMedia.video ||
+      (targetMedia.mimetype && targetMedia.mimetype.includes("video")) ||
+      (targetMedia.data && targetMedia.data.message && targetMedia.data.message.videoMessage)
+    );
+
+    // Check duration if available (WhatsApp stickers must be under 10 seconds)
+    const mediaObj = targetMedia.data?.message?.videoMessage || targetMedia.quoted?.message?.videoMessage;
+    if (isVideo && mediaObj?.seconds > 10) {
+      return await message.send("_Video is too long! Send a video or GIF under 7 seconds for stickers._");
+    }
+
     // Process single image, video, or GIF safely
     var savedFile = await targetMedia.download();
     if (!savedFile) return await message.send("_Failed to download media!_");
 
-    let isVideo = targetMedia.video === true;
     let converted = await sticker(savedFile, isVideo ? "video" : "image");
     if (!converted || !fs.existsSync(converted)) {
       if (fs.existsSync(savedFile)) fs.unlinkSync(savedFile);
-      return await message.send("_Failed to process sticker!_");
+      return await message.send("_Failed to process sticker! Ensure video is short (< 7s)._");
     }
 
     let exifFile = await addExif(converted, exif);
