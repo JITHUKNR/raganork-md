@@ -215,10 +215,23 @@ Module(
           ffmpeg(savedFile)
             .setStartTime(0)
             .setDuration(6)
-            .outputOptions(["-y"])
+            .outputOptions([
+              "-y",
+              "-c:v copy",
+              "-c:a copy"
+            ])
             .save(trimmedFile)
             .on("end", resolve)
-            .on("error", reject);
+            .on("error", (err) => {
+              // Fallback if stream copy fails
+              ffmpeg(savedFile)
+                .setStartTime(0)
+                .setDuration(6)
+                .outputOptions(["-y", "-crf 18", "-preset slow"])
+                .save(trimmedFile)
+                .on("end", resolve)
+                .on("error", reject);
+            });
         });
         fileToConvert = trimmedFile;
       } catch (trimErr) {
